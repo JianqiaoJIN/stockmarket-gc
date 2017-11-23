@@ -12,16 +12,16 @@ from data_processing import *
 from mlp_experiment import run_encoding_experiment
 
 # Parse command line arguments
-lag = 1
+lag = 5
 mbsize = None
-lam_list = [0.1, 2.0, 10.0]
+lam_list = [0.01, 0.05, 0.1, 0.5]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
-arch = 1
+arch = 2
 lr = 0.001
-filename = 'Data/var.csv'
+filename = 'Data/international_indices_returns.csv'
 
 # Prepare data
 data = pd.read_csv(filename, dtype = float, header = 0, sep = ',')
@@ -58,7 +58,7 @@ for lam in lam_list:
 
 	# Run experiment
 	train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize)
+		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize, nonlinearity = 'sigmoid')
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
@@ -79,20 +79,9 @@ for lam in lam_list:
 	results.append(results_dict)
 
 # Save results
-with open('var_experiment.out', 'wb') as f:
+with open('international_indices.out', 'wb') as f:
 	pickle.dump(results, f)
-
-# Validation loss plots
-
-fig, ax_list = plt.subplots(1, 3, sharey = 'row')
-
-for results_dict, ax in zip(results, ax_list):
-	ax.plot(results_dict['val_loss'])
-plt.show()
-
-# GC recovery plots
 
 for results_dict in results:
 	plt.imshow(results_dict['GC_est'], cmap = 'gray')
 	plt.show()
-

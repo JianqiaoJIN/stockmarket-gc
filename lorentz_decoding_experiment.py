@@ -9,19 +9,17 @@ import sys
 import matplotlib.pyplot as plt
 
 from data_processing import *
-from mlp_experiment import run_encoding_experiment
+from mlp_experiment import run_decoding_experiment
 
 # Parse command line arguments
 lag = 3
 mbsize = None
-lam_list = [0.15, 0.175, 0.2, 0.225, 0.25]
-lam_list = [0.2]
-lam = 0.2
+lam_list = [0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
-arch = 1
+arch = 4
 lr = 0.005
 filename = 'Data/lorentz.csv'
 
@@ -42,13 +40,17 @@ else:
 
 # Determine architecture
 if arch == 1:
-	hidden_units = [p_in]
+	series_units = [1]
+	fc_units = [p_in]
 elif arch == 2:
-	hidden_units = [p_in, p_in]
+	series_units = [2]
+	fc_units = [2 * p_in]
 elif arch == 3:
-	hidden_units = [2 * p_in]
+	series_units = [2]
+	fc_units = [p_in, p_in]
 elif arch == 4:
-	hidden_units = [2 * p_in, 2 * p_in]
+	series_units = [3]
+	fc_units = [2 * p_in, 2 * p_in]
 else:
 	raise ValueError('arch must be in {1, 2, 3, 4}')
 
@@ -60,16 +62,16 @@ for lam in lam_list:
 
 	# Run experiment
 	np.random.seed(seed)
-	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize, predictions = True)
+	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_decoding_experiment(X_train, Y_train, X_val, Y_val, 
+		lag, nepoch, lr, lam, penalty_type, series_units, fc_units, opt_type, mbsize = mbsize, predictions = True)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
 	for target in range(p_out):
 		W = weights_list[target]
 		for candidate in range(p_in):
-			start = candidate * lag
-			end = (candidate + 1) * lag
+			start = candidate * series_units[-1]
+			end = (candidate + 1) * series_units[-1]
 			GC_est[target, candidate] = np.linalg.norm(W[:, range(start, end)], ord = 2)
 	
 	# Save results
@@ -88,17 +90,19 @@ with open('lorentz_experiment.out', 'wb') as f:
 	pickle.dump(results, f)
 
 # Loss plots
-for results_dict in results:
+for la, results_dict in zip(lam_list, results):
 	fig = plt.figure(figsize = (8, 5))
 	ax = fig.add_subplot(1, 1, 1)
 	ax.plot(results_dict['train_loss'], color = 'orange')
 	ax.plot(results_dict['val_loss'], color = 'blue')
+	ax.set_title('lam = %f' % lam)
 	plt.show()
 
 # GC recovery plots
-# for results_dict in results:
-# 	plt.imshow(results_dict['GC_est'], cmap = 'gray')
-# 	plt.show()
+for lam, results_dict in zip(lam_list, results):
+	plt.imshow(results_dict['GC_est'], cmap = 'gray')
+	plt.title('lam = %f' % lam)
+	plt.show()
 
 # GC recovery plots for 8 different nepochs
 # fig = plt.figure()
@@ -110,7 +114,6 @@ for results_dict in results:
 # 	ax.set_title('nepochs = %d' % n)
 # plt.suptitle('Lorentz experiment, lam = 0.2, hidden = [10], lr = 0.0001')
 # plt.show()
-
 
 for results_dict in results:
 	Y = Y_val

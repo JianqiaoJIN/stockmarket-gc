@@ -12,20 +12,22 @@ from data_processing import *
 from mlp_experiment import run_encoding_experiment
 
 # Parse command line arguments
-lag = 1
+lag = 5
 mbsize = None
-lam_list = [0.1, 2.0, 10.0]
+lam_list = [0.5, 0.25, 0.1, 0.05, 0.025, 0.01, 0.005, 0.0025, 0.001]
+lam_list = [0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
-arch = 1
+arch = 2
 lr = 0.001
-filename = 'Data/var.csv'
+filename = 'Data/sectors_monthly_returns.csv'
 
 # Prepare data
 data = pd.read_csv(filename, dtype = float, header = 0, sep = ',')
 data_values = data.values[:, 1:]
+data_values = whiten_data_cholesky(data_values)
 
 X_train, Y_train, X_val, Y_val = format_ts_data(data_values, lag = lag, validation = 0.1)
 
@@ -57,8 +59,8 @@ results = []
 for lam in lam_list:
 
 	# Run experiment
-	train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize)
+	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
+		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize, predictions = True)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
@@ -74,25 +76,35 @@ for lam in lam_list:
 		'train_loss': train_loss,
 		'val_loss': val_loss,
 		'weights_list': weights_list,
-		'GC_est': GC_est
+		'GC_est': GC_est,
+		'forecasts_train': forecasts_train,
+		'forecasts_val': forecasts_val
 	}
 	results.append(results_dict)
 
 # Save results
-with open('var_experiment.out', 'wb') as f:
+with open('sectors.out', 'wb') as f:
 	pickle.dump(results, f)
 
-# Validation loss plots
-
-fig, ax_list = plt.subplots(1, 3, sharey = 'row')
-
-for results_dict, ax in zip(results, ax_list):
-	ax.plot(results_dict['val_loss'])
-plt.show()
-
-# GC recovery plots
-
-for results_dict in results:
+for lam, results_dict in zip(lam_list, results):
 	plt.imshow(results_dict['GC_est'], cmap = 'gray')
+	plt.title('lam = %f' % lam)
 	plt.show()
 
+for results_dict in results:
+	Y = Y_val
+	fc = results_dict['forecasts_val']
+	fig = plt.figure(figsize = (10, 6))
+	for i in range(p_out):
+		ax = fig.add_subplot(2, 5, i + 1)
+		ax.plot(Y[:, i])
+		ax.plot(fc[:, i])
+	plt.show()
+	Y = Y_train
+	fc = results_dict['forecasts_train']
+	fig = plt.figure(figsize = (10, 6))
+	for i in range(p_out):
+		ax = fig.add_subplot(2, 5, i + 1)
+		ax.plot(Y[:, i])
+		ax.plot(fc[:, i])
+	plt.show()

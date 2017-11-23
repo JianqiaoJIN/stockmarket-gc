@@ -13,7 +13,8 @@ def lorentz_96(forcing_constant, p, N, delta_t = 0.01, sd = 0.1, noise_add = 'gl
 	z[0, :] = np.random.normal(loc = 0, scale = 0.01, size = p)
 	for t in range(1, N):
 		for i in range(p):
-			grad = (z[t - 1, (i + 1) % p] - z[t - 1, i - 2]) * z[t - 1, i - 1] - z[t - 1, i] + forcing_constant
+			upone = (i + 1) % p
+			grad = (z[t - 1, upone] - z[t - 1, i - 2]) * z[t - 1, i - 1] - z[t - 1, i] + forcing_constant
 			z[t, i] = delta_t * grad + z[t - 1, i]
 			if noise_add == 'step':
 				z[t, i] += np.random.normal(loc = 0, scale = sd, size = 1)

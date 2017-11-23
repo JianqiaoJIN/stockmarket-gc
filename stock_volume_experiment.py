@@ -6,27 +6,30 @@ from itertools import product
 import pickle
 import shutil
 import sys
+import matplotlib.pyplot as plt
 
 from data_processing import *
-from mlp_experiment import run_experiment
+from mlp_experiment import run_encoding_experiment
 
 # Parse command line arguments
 lag = 5
 mbsize = None
-lam_list = [0.04, 0.045, 0.05, 0.055, 0.06, 0.065, 0.07, 0.075]
+lam_list = [0.01, 0.025, 0.05, 0.075, 0.1]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
-arch = 1
+arch = 2
 lr = 0.001
-filename = 'Data/mixed_volume_price_log_returns.csv'
+filename = 'Data/mixed_volume_price_returns.csv'
 
 # Prepare data
 data = pd.read_csv(filename, dtype = float, header = 0, sep = ',')
 data_values = data.values[:, 1:]
 
 X_train, Y_train, X_val, Y_val = format_ts_data(data_values, lag = lag, validation = 0.1)
+Y_train = Y_train[:, :5]
+Y_val = Y_val[:, :5]
 
 T, p_out = Y_train.shape
 p_in = int(X_train.shape[1] / lag)
@@ -56,7 +59,7 @@ results = []
 for lam in lam_list:
 
 	# Run experiment
-	train_loss, val_loss, weights_list = run_experiment(X_train, Y_train, X_val, Y_val, 
+	train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
 		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize)
 	
 	# Create GC estimate grid

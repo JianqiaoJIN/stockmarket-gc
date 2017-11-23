@@ -9,18 +9,19 @@ import sys
 import matplotlib.pyplot as plt
 
 from data_processing import *
-from mlp_experiment import run_encoding_experiment
+from mlp_experiment import run_decoding_experiment
 
 # Parse command line arguments
 lag = 1
 mbsize = None
-lam_list = [0.1, 2.0, 10.0]
+lam_list = [5.0, 2.0, 1.0, 0.5, 0.1, 0.05, 0.01]
+lam_list = [10.0, 8.0, 6.0, 4.0, 2.0]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
 arch = 1
-lr = 0.001
+lr = 0.005
 filename = 'Data/var.csv'
 
 # Prepare data
@@ -40,13 +41,17 @@ else:
 
 # Determine architecture
 if arch == 1:
-	hidden_units = [p_in]
+	series_units = [1]
+	fc_units = [p_in]
 elif arch == 2:
-	hidden_units = [p_in, p_in]
+	series_units = [2]
+	fc_units = [2 * p_in]
 elif arch == 3:
-	hidden_units = [2 * p_in]
+	series_units = [2]
+	fc_units = [p_in, p_in]
 elif arch == 4:
-	hidden_units = [2 * p_in, 2 * p_in]
+	series_units = [2, 2]
+	fc_units = [2 * p_in, 2 * p_in]
 else:
 	raise ValueError('arch must be in {1, 2, 3, 4}')
 
@@ -57,8 +62,8 @@ results = []
 for lam in lam_list:
 
 	# Run experiment
-	train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize)
+	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_decoding_experiment(X_train, Y_train, X_val, Y_val, 
+		lag, nepoch, lr, lam, penalty_type, series_units, fc_units, opt_type, mbsize = mbsize, predictions = True)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
@@ -74,7 +79,9 @@ for lam in lam_list:
 		'train_loss': train_loss,
 		'val_loss': val_loss,
 		'weights_list': weights_list,
-		'GC_est': GC_est
+		'GC_est': GC_est,
+		'forecasts_train': forecasts_train,
+		'forecasts_val': forecasts_val
 	}
 	results.append(results_dict)
 
@@ -96,3 +103,20 @@ for results_dict in results:
 	plt.imshow(results_dict['GC_est'], cmap = 'gray')
 	plt.show()
 
+# for results_dict in results:
+# 	Y = Y_val
+# 	fc = results_dict['forecasts_val']
+# 	fig = plt.figure(figsize = (10, 6))
+# 	for i in range(p_out):
+# 		ax = fig.add_subplot(2, 5, i + 1)
+# 		ax.plot(Y[:, i])
+# 		ax.plot(fc[:, i])
+# 	plt.show()
+# 	Y = Y_train
+# 	fc = results_dict['forecasts_train']
+# 	fig = plt.figure(figsize = (10, 6))
+# 	for i in range(p_out):
+# 		ax = fig.add_subplot(2, 5, i + 1)
+# 		ax.plot(Y[:, i])
+# 		ax.plot(fc[:, i])
+# 	plt.show()

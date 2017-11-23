@@ -8,7 +8,7 @@ import shutil
 import sys
 
 from data_processing import *
-from mlp_experiment import run_experiment
+from mlp_experiment import run_encoding_experiment
 
 # Parse command line arguments
 lag = 1
@@ -95,7 +95,7 @@ for lr, restart in product(lr_list, range(nrestarts)):
 		print('Running experiment for lr=%e, restart=%d' %(lr, restart))
 
 		# Run experiment
-		train_loss, val_loss, weights_list = run_experiment(X_train, Y_train, X_val, Y_val, 
+		train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
 			lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize)
 
 		# Save results
