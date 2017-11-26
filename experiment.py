@@ -5,7 +5,8 @@ def run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = None,
 	# Batch parameters
 	minibatches = not mbsize is None
 	if minibatches:
-		n_batches = ceil(N_train / mbsize)
+		T_train = X_train.shape[0]
+		n_batches = ceil(T_train / mbsize)
 
 	# Prepare for training
 	nchecks = int(nepoch / loss_check)
@@ -27,8 +28,8 @@ def run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = None,
 				y_batch = Y_train[range(i * mbsize, (i + 1) * mbsize), :]
 				model.train(x_batch, y_batch)
 
-			x_batch = X_train[range((n_batches - 1) * mbsize, N_train), :]
-			y_batch = Y_train[range((n_batches - 1) * mbsize, N_train), :]
+			x_batch = X_train[range((n_batches - 1) * mbsize, T_train), :]
+			y_batch = Y_train[range((n_batches - 1) * mbsize, T_train), :]
 			model.train(x_batch, y_batch)
 
 		else:
