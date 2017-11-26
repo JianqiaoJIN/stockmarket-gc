@@ -4,6 +4,9 @@ import torch.optim as optim
 from torch.autograd import Variable
 
 import numpy as np
+from itertools import chain
+
+from regularize import *
 
 class ParallelMLPEncoding:
 	def __init__(self, input_series, output_series, lag, hidden_units, lr, opt, lam, penalty, nonlinearity = 'relu'):
@@ -54,163 +57,51 @@ class ParallelMLPEncoding:
 
 			self.train = self._train_builtin
 
-	def _train_prox(self, X_batch, Y_batch):
-		# Take gradient step
-		X_var = Variable(torch.from_numpy(X_batch).float())
-
-		# Forward propagate to calculate MSE
-		mse_list = []
-		for target in range(self.p):
-			Y_var = Variable(torch.from_numpy(Y_batch[:, target][:, np.newaxis]).float())
-			net = self.sequentials[target]
-			y_pred = net(X_var)
-			mse = self.loss_fn(y_pred, Y_var)
-			mse_list.append(mse)
-
+	def _train_prox(self, X, Y):
 		# Compute total loss
-		total_mse = sum(mse_list)
+		mse = self._mse(X, Y)
+		total_mse = sum(mse)
 
 		# Run optimizer
-		for net in self.sequentials:
-			net.zero_grad()
+		[net.zero_grad() for net in self.sequentials]
 
 		total_mse.backward()
 		self.optimizer.step()
 
 		# Apply prox operator
-		for net in self.sequentials:
-			W = list(net.parameters())[0]
-			prox_operator(W, self.penalty, self.n, self.lag, self.lr, self.lam)
+		[prox_operator(list(net.parameters())[0], self.penalty, self.n, self.lr, self.lam, lag = self.lag) for net in self.sequentials]
 
-	def _train_builtin(self, X_batch, Y_batch):
-		# Create variable for input
-		X_var = Variable(torch.from_numpy(X_batch).float())
-
-		# Forward propagate to calculate MSE
-		mse_list = []
-		for target in range(self.p):
-			Y_var = Variable(torch.from_numpy(Y_batch[:, target][:, np.newaxis]).float())
-			net = self.sequentials[target]
-			y_pred = net(X_var)
-			mse = self.loss_fn(y_pred, Y_var)
-			mse_list.append(mse)
-
-		# Add regularization penalties
-		penalty_list = []
-		for net in self.sequentials:
-			W = list(net.parameters())[0]
-			penalty = apply_penalty(W, self.penalty, self.n, self.lag)
-			penalty_list.append(penalty)
-
+	def _train_builtin(self, X, Y):
 		# Compute total loss
-		total_loss = sum(mse_list) + self.lam * sum(penalty_list)
+		mse = self._mse(X, Y)
+		penalty = [apply_penalty(list(net.parameters())[0], self.penalty, self.n, lag = self.lag) for net in self.sequentials]
+		total_loss = sum(mse) + self.lam * sum(penalty)
 
 		# Run optimizer
-		for net in self.sequentials:
-			net.zero_grad()
+		[net.zero_grad() for net in self.sequentials]
 
 		total_loss.backward()
 		self.optimizer.step()
 
-	def calculate_mse(self, X_batch, Y_batch):
-		# Create variable for input
-		X_var = Variable(torch.from_numpy(X_batch).float())
+	def _forward(self, X):
+		X_var = Variable(torch.from_numpy(X).float())
+		return [net(X_var) for net in self.sequentials]
 
-		# Forward propagate to calculate MSE
-		mse_list = []
-		for target in range(self.p):
-			Y_var = Variable(torch.from_numpy(Y_batch[:, target][:, np.newaxis]).float())
-			net = self.sequentials[target]
-			y_pred = net(X_var)
-			mse = self.loss_fn(y_pred, Y_var)
-			mse_list.append(mse)
+	def _mse(self, X, Y):
+		Y_pred = self._forward(X)
+		Y_var = [Variable(torch.from_numpy(Y[:, target][:, np.newaxis]).float()) for target in range(self.p)]
+		return [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.p)]
 
-		return np.array([mse.data[0] for mse in mse_list])
+	def calculate_mse(self, X, Y):
+		mse = self._mse(X, Y)
+		return np.array([num.data[0] for num in mse])
 
 	def get_weights(self):
-		weights = []
-		for net in self.sequentials:
-			W = list(net.parameters())[0].data.numpy()
-			weights.append(W)
-
-		return weights
+		return [list(net.parameters())[0].data.numpy() for net in self.sequentials]
 
 	def predict(self, X):
-		X_var = Variable(torch.from_numpy(X).float())
-		out = np.zeros((X.shape[0], self.p))
-		for target in range(self.p):
-			net = self.sequentials[target]
-			Y_pred = net(X_var).data[:, 0].numpy()
-			out[:, target] = Y_pred
-
-		return out
-
-def apply_penalty(W, penalty, n, lag):
-	if penalty == 'group_lasso':
-		loss_list = []
-		for i in range(n):
-			start = i * lag
-			end = (i + 1) * lag
-			norm = torch.norm(W[:, start:end], p = 2)
-			loss_list.append(norm)
-	elif penalty == 'hierarchical':
-		loss_list = []
-		for i in range(n):
-			start = i * lag
-			end = (i + 1) * lag
-			for j in range(lag):
-				norm = torch.norm(W[:, start:(end - j)], p = 2)
-				loss_list.append(norm)
-	else:
-		raise ValueError('penalty must be group_lasso or hierarchical')
-
-	return sum(loss_list)
-
-def prox_operator(W, penalty, n, lag, lr, lam):
-	if penalty == 'group_lasso':
-		_prox_group_lasso(W, penalty, n, lag, lr, lam)
-	elif penalty == 'hierarchical':
-		_prox_hierarchical(W, penalty, n, lag, lr, lam)
-	else:
-		raise ValueError('penalty must be group_lasso or hierarchical')
-
-def _prox_group_lasso(W, penalty, n, lag, lr, lam):
-	'''
-		Apply prox operator directly (not through prox of conjugate)
-		TODO incorporate ;r
-	'''
-	C = W.data.clone().numpy()
-	h, l = C.shape
-	C = np.reshape(C, newshape = (lag * h, n), order = 'F')
-	C = _prox_update(C, lam, lr)
-	C = np.reshape(C, newshape = (h, l), order = 'F')
-	W.data = torch.from_numpy(C)
-
-def _prox_hierarchical(W, penalty, n, lag, lr, lam):
-	''' 
-		Apply prox operator for each penalty
-	'''
-	C = W.data.clone().numpy()
-	h, l = C.shape
-	C = np.reshape(C, newshape = (lag * h, n), order = 'F')
-	for i in range(1, lag + 1):
-		start = 0
-		end = i * h
-		temp = C[range(start, end), :]
-		C[range(start, end), :] = _prox_update(temp, lam, lr)
-
-	C = np.reshape(C, newshape = (h, l), order = 'F')
-	W.data = torch.from_numpy(C)
-
-def _prox_update(W, lam, lr):
-	'''
-		Apply prox operator to a matrix, where columns each have group lasso penalty
-	'''
-	norm_value = np.linalg.norm(W, axis = 0, ord = 2)
-	norm_value_gt = norm_value >= lam * lr
-	W[:, np.logical_not(norm_value_gt)] = 0.0
-	W[:, norm_value_gt] = W[:, norm_value_gt] * (1 - lr * lam / norm_value[norm_value_gt][np.newaxis])
-	return W
+		Y_pred = self._forward(X)
+		return np.array([Y[:, 0].data.numpy() for Y in Y_pred]).T
 
 class ParallelMLPDecoding:
 	def __init__(self, input_series, output_series, lag, series_units, fc_units, lr, opt, lam, penalty, nonlinearity = 'relu'):
@@ -263,7 +154,7 @@ class ParallelMLPDecoding:
 		self.penalty = penalty
 
 		param_list = []
-		for net in (self.series_nets + self.out_nets):
+		for net in chain(self.series_nets, self.out_nets):
 			param_list = param_list + list(net.parameters())
 		
 		if opt == 'prox':
@@ -282,116 +173,48 @@ class ParallelMLPDecoding:
 
 			self.train = self._train_builtin
 
-	def _train_prox(self, X_batch, Y_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-
-		# Forward propagate
-		series_out = []
-		for i, net in enumerate(self.series_nets):
-			start = i * self.lag
-			end = (i + 1) * self.lag
-			series_out.append(net(X_var[:, start:end]))
-		series_layer = torch.cat(series_out, dim = 1)
-
-		mse_list = []
-		for i, net in enumerate(self.out_nets):
-			Y_pred = net(series_layer)
-			Y_var = Variable(torch.from_numpy(Y_batch[:, i][:, np.newaxis]).float())
-			mse = self.loss_fn(Y_pred, Y_var)
-			mse_list.append(mse)
+	def _train_prox(self, X, Y):
+		mse = self._mse(X, Y)
+		total_mse = sum(mse)
 
 		# Take gradient step
-		total_mse = sum(mse_list)
-		for net in (self.series_nets + self.out_nets):
-			net.zero_grad()
+		[net.zero_grad() for net in chain(self.series_nets, self.out_nets)]
 
 		total_mse.backward()
 		self.optimizer.step()
 
 		# Apply prox operator
-		for net in self.out_nets:
-			W = list(net.parameters())[0]
-			prox_operator(W, self.penalty, self.n, self.series_out_size, self.lr, self.lam)
+		[prox_operator(list(net.parameters())[0], self.penalty, self.n, self.lr, self.lam, lag = self.series_out_size) for net in self.out_nets]
 
-	def _train_builtin(self, X_batch, Y_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-
-		# Forward propagate
-		series_out = []
-		for i, net in enumerate(self.series_nets):
-			start = i * self.lag
-			end = (i + 1) * self.lag
-			series_out.append(net(X_var[:, start:end]))
-		series_layer = torch.cat(series_out, dim = 1)
-
-		mse_list = []
-		for i, net in enumerate(self.out_nets):
-			Y_pred = net(series_layer)
-			Y_var = Variable(torch.from_numpy(Y_batch[:, i][:, np.newaxis]).float())
-			mse = self.loss_fn(Y_pred, Y_var)
-			mse_list.append(mse)
-
-		# Add penalty terms
-		penalty_list = []
-		for net in self.out_nets:
-			W = list(net.parameters())[0]
-			penalty = apply_penalty(W, self.penalty, self.n, self.series_out_size)
-			penalty_list.append(penalty)
-
-		total_loss = sum(mse_list) + self.lam * sum(penalty_list)
+	def _train_builtin(self, X, Y):
+		mse = self._mse(X, Y)
+		penalty = [apply_penalty(list(net.parameters())[0], self.penalty, self.n, lag = self.series_out_size) for net in self.out_nets]
+		total_loss = sum(mse) + self.lam * sum(penalty)
 
 		# Run optimizer
-		for net in (self.series_nets + self.out_nets):
-			net.zero_grad()
+		[net.zero_grad() for net in chain(self.series_nets, self.out_nets)]
 
 		total_loss.backward()
 		self.optimizer.step()
 
-	def calculate_mse(self, X_batch, Y_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-
-		# Forward propagate
-		series_out = []
-		for i, net in enumerate(self.series_nets):
-			start = i * self.lag
-			end = (i + 1) * self.lag
-			series_out.append(net(X_var[:, start:end]))
+	def _forward(self, X):
+		X_var = Variable(torch.from_numpy(X).float())
+		series_out = [self.series_nets[i](X_var[:, (i * self.lag):((i + 1) * self.lag)]) for i in range(self.n)]
 		series_layer = torch.cat(series_out, dim = 1)
+		return [net(series_layer) for net in self.out_nets]
 
-		total_mse = []
-		for i, net in enumerate(self.out_nets):
-			Y_pred = net(series_layer)
-			Y_var = Variable(torch.from_numpy(Y_batch[:, i][:, np.newaxis]).float())
-			mse = self.loss_fn(Y_pred, Y_var)
-			total_mse.append(mse)
-		
-		return [mse.data[0] for mse in total_mse]
+	def _mse(self, X, Y):
+		Y_pred = self._forward(X)
+		Y_var = [Variable(torch.from_numpy(Y[:, target][:, np.newaxis]).float()) for target in range(self.p)]
+		return [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.p)]
+
+	def calculate_mse(self, X, Y):
+		mse = self._mse(X, Y)
+		return [num.data[0] for num in mse]
 
 	def get_weights(self):
-		weights_list = []
-		for net in self.out_nets:
-			weights_list.append(list(net.parameters())[0].data.numpy())
+		return [list(net.parameters())[0].data.numpy() for net in self.out_nets]
 
-		return weights_list
-
-	def predict(self, X_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-		out = np.zeros((X_batch.shape[0], self.p))
-
-		# Forward propagate
-		series_out = []
-		for i, net in enumerate(self.series_nets):
-			start = i * self.lag
-			end = (i + 1) * self.lag
-			series_out.append(net(X_var[:, start:end]))
-		series_layer = torch.cat(series_out, dim = 1)
-
-		for i, net in enumerate(self.out_nets):
-			Y_pred = net(series_layer)
-			out[:, i] = Y_pred.data[:, 0].numpy()
-
-		return out
+	def predict(self, X):
+		Y_pred = self._forward(X)
+		return np.array([Y[:, 0].data.numpy() for Y in Y_pred]).T

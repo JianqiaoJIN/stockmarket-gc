@@ -9,11 +9,13 @@ import sys
 import matplotlib.pyplot as plt
 
 from data_processing import *
-from regression_experiment import run_iid_experiment
+from experiment import run_experiment
+from model_iid import *
 
 # Parse command line arguments
 mbsize = None
 lam_list = [0.5, 0.1, 0.05, 0.01, 0.005, 0.001, 0.0001, 0.00000001]
+lam_list = [0.05]
 opt = 'prox'
 seed = 123
 nepoch = 30000
@@ -40,6 +42,11 @@ X_train = X[range(N_train), :]
 X_val = X[range(N_train, N), :]
 Y_train = Y[range(N_train)]
 Y_val = Y[range(N_train, N)]
+p_in = X_train.shape[1]
+if len(Y_train.shape) == 1:
+	p_out = 1
+else:
+	p_out = Y_train.shape[1]
 
 # Encode groups for penalties
 penalty_groups = [0, 4, 5, 17, 18, 25, 26, 30, 31, 32, 33, 34]
@@ -70,9 +77,12 @@ np.random.seed(seed)
 # Run optimizations
 for lam in lam_list:
 
+	# Get model
+	model = RegressionEncoding(p_in, p_out, hidden_units, lr, opt, lam, penalty_groups)
+
 	# Run experiment
-	train_loss, val_loss, weights = run_iid_experiment(X_train, Y_train, X_val, Y_val, 
-		nepoch, lr, lam, hidden_units, opt, penalty_groups, mbsize)
+	train_loss, val_loss, weights = run_experiment(model, X_train, Y_train, X_val, Y_val, 
+		nepoch, mbsize = mbsize)
 	
 	# Perform variable selection
 	GC_est = np.zeros(len(penalty_groups) - 1)

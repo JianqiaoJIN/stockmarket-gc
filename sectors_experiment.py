@@ -9,13 +9,14 @@ import sys
 import matplotlib.pyplot as plt
 
 from data_processing import *
-from mlp_experiment import run_encoding_experiment
+from experiment import run_experiment
+from model_mlp import *
 
 # Parse command line arguments
 lag = 5
 mbsize = None
 lam_list = [0.5, 0.25, 0.1, 0.05, 0.025, 0.01, 0.005, 0.0025, 0.001]
-lam_list = [0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1]
+lam_list = [0.06, 0.055, 0.05, 0.045, 0.04, 0.035, 0.03]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
@@ -58,9 +59,11 @@ results = []
 # Run optimizations
 for lam in lam_list:
 
+	# Get model
+	model = ParallelMLPEncoding(p_in, p_out, lag, hidden_units, lr, opt_type, lam, penalty_type)
+	
 	# Run experiment
-	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize, predictions = True)
+	train_loss, val_loss, weights_list = run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = mbsize)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
@@ -91,7 +94,7 @@ for lam, results_dict in zip(lam_list, results):
 	plt.title('lam = %f' % lam)
 	plt.show()
 
-for results_dict in results:
+for lam, results_dict in zip(lam_list, results):
 	Y = Y_val
 	fc = results_dict['forecasts_val']
 	fig = plt.figure(figsize = (10, 6))
@@ -99,6 +102,7 @@ for results_dict in results:
 		ax = fig.add_subplot(2, 5, i + 1)
 		ax.plot(Y[:, i])
 		ax.plot(fc[:, i])
+	plt.suptitle('lam = %f' % lam)
 	plt.show()
 	Y = Y_train
 	fc = results_dict['forecasts_train']
@@ -107,4 +111,6 @@ for results_dict in results:
 		ax = fig.add_subplot(2, 5, i + 1)
 		ax.plot(Y[:, i])
 		ax.plot(fc[:, i])
+	plt.suptitle('lam = %f' % lam)
 	plt.show()
+

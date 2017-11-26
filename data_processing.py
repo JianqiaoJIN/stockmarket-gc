@@ -28,6 +28,15 @@ def format_ts_data_subset(X, on_vector, lag = 1, validation = 0.1):
 
 	return X_train, Y_train[:, on_vector], X_val, Y_val[:, on_vector]
 
+def split_data(X, validation = 0.1):
+	T = X.shape[0]
+	T_val = int(T * validation)
+	T_train = T - T_val
+	X_train = X[range(T_train), :]
+	X_val = X[range(T_train, T), :]
+
+	return X_train, X_val
+
 def whiten_data_cholesky(X):
 	X_centered = X - np.mean(X, axis = 0)
 

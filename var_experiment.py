@@ -9,18 +9,19 @@ import sys
 import matplotlib.pyplot as plt
 
 from data_processing import *
-from mlp_experiment import run_encoding_experiment
+from experiment import run_experiment
+from model_mlp import *
 
 # Parse command line arguments
 lag = 1
 mbsize = None
-lam_list = [0.1, 2.0, 10.0]
+lam_list = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
 arch = 1
-lr = 0.001
+lr = 0.005
 filename = 'Data/var.csv'
 
 # Prepare data
@@ -56,9 +57,11 @@ results = []
 # Run optimizations
 for lam in lam_list:
 
+	# Get model
+	model = ParallelMLPEncoding(p_in, p_out, lag, hidden_units, lr, opt_type, lam, penalty_type)
+	
 	# Run experiment
-	train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize)
+	train_loss, val_loss, weights_list = run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = mbsize)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
@@ -91,7 +94,6 @@ for results_dict, ax in zip(results, ax_list):
 plt.show()
 
 # GC recovery plots
-
 for results_dict in results:
 	plt.imshow(results_dict['GC_est'], cmap = 'gray')
 	plt.show()

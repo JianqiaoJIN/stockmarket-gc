@@ -10,31 +10,33 @@ import matplotlib.pyplot as plt
 
 from data_processing import *
 from experiment import run_experiment
-from model_mlp import *
+from model_lstm import *
 
 # Parse command line arguments
-lag = 3
 mbsize = None
-lam_list = [0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1]
-lam_list = [0.3]
-penalty_type = 'group_lasso'
-opt_type = 'prox'
+lam_list = [0.1, 2.0, 10.0]
+lam = 0.1
+opt_type = 'adam'
 seed = 12345
 nepoch = 1000
-arch = 4
+arch = 1
 lr = 0.005
-filename = 'Data/lorentz.csv'
+filename = 'Data/var.csv'
 
 # Prepare data
 data = pd.read_csv(filename, dtype = float, header = 0, sep = ',')
 data_values = data.values[:, 1:]
 
-X_train, Y_train, X_val, Y_val = format_ts_data(data_values, lag = lag, validation = 0.1)
+X_train, X_val = split_data(data_values, validation = 0.1)
+Y_train = X_train[1:, :]
+X_train = X_train[:-1, :]
+Y_val = X_val[1:, :]
+X_val = X_val[:-1, :]
 
-T, p_out = Y_train.shape
-p_in = int(X_train.shape[1] / lag)
+p_in = X_val.shape[1]
+p_out = Y_val.shape[1]
 
-# Create filenames
+# Minibatching options
 if mbsize is None:
 	batchsize = 0
 else:
@@ -42,17 +44,17 @@ else:
 
 # Determine architecture
 if arch == 1:
-	series_units = [1]
-	fc_units = [p_in]
+	hidden_size = 1
+	hidden_layers = 1
 elif arch == 2:
-	series_units = [2]
-	fc_units = [2 * p_in]
+	hidden_size = 2
+	hidden_layers = 1
 elif arch == 3:
-	series_units = [2]
-	fc_units = [p_in, p_in]
+	hidden_size = 1
+	hidden_layers = 2 
 elif arch == 4:
-	series_units = [3]
-	fc_units = [2 * p_in, 2 * p_in]
+	hidden_size = 2
+	hidden_layers = 2
 else:
 	raise ValueError('arch must be in {1, 2, 3, 4}')
 
@@ -63,19 +65,19 @@ results = []
 for lam in lam_list:
 
 	# Get model
-	model = ParallelMLPDecoding(p_in, p_out, lag, series_units, fc_units, lr, opt_type, lam, penalty_type)
+	model = ParallelLSTMEncoding(p_in, p_out, hidden_size, hidden_layers, lr, opt_type, lam)
 
 	# Run experiment
 	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_experiment(model, X_train, Y_train, X_val, Y_val, 
-		nepoch, mbsize = mbsize, predictions = True)
+		nepoch, mbsize = mbsize, predictions = True, loss_check = 1)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
 	for target in range(p_out):
 		W = weights_list[target]
 		for candidate in range(p_in):
-			start = candidate * series_units[-1]
-			end = (candidate + 1) * series_units[-1]
+			start = candidate * lag
+			end = (candidate + 1) * lag
 			GC_est[target, candidate] = np.linalg.norm(W[:, range(start, end)], ord = 2)
 	
 	# Save results
@@ -90,36 +92,15 @@ for lam in lam_list:
 	results.append(results_dict)
 
 # Save results
-with open('lorentz_experiment.out', 'wb') as f:
+with open('var_experiment.out', 'wb') as f:
 	pickle.dump(results, f)
 
-# Loss plots
-for la, results_dict in zip(lam_list, results):
-	fig = plt.figure(figsize = (8, 5))
-	ax = fig.add_subplot(1, 1, 1)
-	ax.plot(results_dict['train_loss'], color = 'orange')
-	ax.plot(results_dict['val_loss'], color = 'blue')
-	ax.set_title('lam = %f' % lam)
-	plt.show()
-
-# GC recovery plots
 for lam, results_dict in zip(lam_list, results):
 	plt.imshow(results_dict['GC_est'], cmap = 'gray')
 	plt.title('lam = %f' % lam)
 	plt.show()
 
-# GC recovery plots for 8 different nepochs
-# fig = plt.figure()
-# for i, (result, n) in enumerate(zip(results, nepoch_list), 1):
-# 	ax = fig.add_subplot(2, 4, i)
-# 	ax.imshow(result['GC_est'], cmap = 'gray')
-# 	ax.xaxis.set_visible(False)
-# 	ax.yaxis.set_visible(False)
-# 	ax.set_title('nepochs = %d' % n)
-# plt.suptitle('Lorentz experiment, lam = 0.2, hidden = [10], lr = 0.0001')
-# plt.show()
-
-for results_dict in results:
+for lam, results_dict in zip(lam_list, results):
 	Y = Y_val
 	fc = results_dict['forecasts_val']
 	fig = plt.figure(figsize = (10, 6))
@@ -127,6 +108,7 @@ for results_dict in results:
 		ax = fig.add_subplot(2, 5, i + 1)
 		ax.plot(Y[:, i])
 		ax.plot(fc[:, i])
+	plt.suptitle('lam = %f' % lam)
 	plt.show()
 	Y = Y_train
 	fc = results_dict['forecasts_train']
@@ -135,4 +117,6 @@ for results_dict in results:
 		ax = fig.add_subplot(2, 5, i + 1)
 		ax.plot(Y[:, i])
 		ax.plot(fc[:, i])
+	plt.suptitle('lam = %f' % lam)
 	plt.show()
+

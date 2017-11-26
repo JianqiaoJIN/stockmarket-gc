@@ -45,14 +45,8 @@ class RegressionEncoding:
 
 			self.train = self._train_builtin
 
-	def _train_builtin(self, X_batch, Y_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-		Y_var = Variable(torch.from_numpy(Y_batch).float())
-
-		# Forward propagate to calculate MSE
-		Y_pred = self.net(X_var)
-		mse = self.loss_fn(Y_pred, Y_var)
+	def _train_builtin(self, X, Y):
+		mse = self._mse(X, Y)
 
 		# Add regularization penalties
 		W = list(self.net.parameters())[0]
@@ -69,14 +63,8 @@ class RegressionEncoding:
 		total_loss.backward()
 		self.optimizer.step()
 
-	def _train_prox(self, X_batch, Y_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-		Y_var = Variable(torch.from_numpy(Y_batch).float())
-
-		# Forward propagate to calculate MSE
-		Y_pred = self.net(X_var)
-		mse = self.loss_fn(Y_pred, Y_var)
+	def _train_prox(self, X, Y):
+		mse = self._mse(X, Y)
 
 		# Run optimizer
 		self.net.zero_grad()
@@ -94,25 +82,21 @@ class RegressionEncoding:
 				C[:, start:end] = 0.0
 		W.data = torch.from_numpy(C)
 
-	def calculate_mse(self, X_batch, Y_batch):
-		# Create variables
-		X_var = Variable(torch.from_numpy(X_batch).float())
-		Y_var = Variable(torch.from_numpy(Y_batch).float())
+	def calculate_mse(self, X, Y):
+		return self._mse(X, Y).data.numpy()[0]
 
-		# Forward propagate
-		Y_pred = self.net(X_var)
+	def _forward(self, X):
+		X_var = Variable(torch.from_numpy(X).float())
+		return self.net(X_var)
 
-		# Calculate MSE
-		mse = self.loss_fn(Y_pred, Y_var)
-		return mse.data.numpy()[0]
+	def _mse(self, X, Y):
+		Y_var = Variable(torch.from_numpy(Y).float())
+		Y_pred = self._forward(X)
+		return self.loss_fn(Y_pred, Y_var)
 
 	def get_weights(self):
 		return list(self.net.parameters())[0].data.numpy()
 
-	def predict(self, X_batch):
-		# Create variable
-		X_var = Variable(torch.from_numpy(X_batch).float())
-
-		# Forward propagate
-		Y_pred = self.net(X_var)
+	def predict(self, X):
+		Y_pred = self._forward(X)
 		return Y_pred.data.numpy()

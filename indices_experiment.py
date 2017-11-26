@@ -9,7 +9,8 @@ import sys
 import matplotlib.pyplot as plt
 
 from data_processing import *
-from mlp_experiment import run_encoding_experiment
+from experiment import run_experiment
+from model_mlp import *
 
 # Parse command line arguments
 lag = 5
@@ -56,9 +57,11 @@ results = []
 # Run optimizations
 for lam in lam_list:
 
+	# Get model
+	model = ParallelMLPEncoding(p_in, p_out, lag, hidden_units, lr, opt_type, lam, penalty_type)
+	
 	# Run experiment
-	train_loss, val_loss, weights_list = run_encoding_experiment(X_train, Y_train, X_val, Y_val, 
-		lag, nepoch, lr, lam, penalty_type, hidden_units, opt_type, mbsize = mbsize, nonlinearity = 'sigmoid')
+	train_loss, val_loss, weights_list = run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = mbsize)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))
