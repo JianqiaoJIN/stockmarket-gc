@@ -32,6 +32,7 @@ class ParallelMLPEncoding:
 			self.sequentials.append(net)
 
 		# Set up optimizer
+		self.task = 'regression'
 		self.loss_fn = nn.MSELoss()
 		self.lr = lr
 		self.lam = lam
@@ -59,13 +60,13 @@ class ParallelMLPEncoding:
 
 	def _train_prox(self, X, Y):
 		# Compute total loss
-		mse = self._mse(X, Y)
-		total_mse = sum(mse)
+		loss = self._loss(X, Y)
+		total_loss = sum(loss)
 
 		# Run optimizer
 		[net.zero_grad() for net in self.sequentials]
 
-		total_mse.backward()
+		total_loss.backward()
 		self.optimizer.step()
 
 		# Apply prox operator
@@ -73,9 +74,9 @@ class ParallelMLPEncoding:
 
 	def _train_builtin(self, X, Y):
 		# Compute total loss
-		mse = self._mse(X, Y)
+		loss = self._loss(X, Y)
 		penalty = [apply_penalty(list(net.parameters())[0], self.penalty, self.n, lag = self.lag) for net in self.sequentials]
-		total_loss = sum(mse) + self.lam * sum(penalty)
+		total_loss = sum(loss) + self.lam * sum(penalty)
 
 		# Run optimizer
 		[net.zero_grad() for net in self.sequentials]
@@ -87,14 +88,14 @@ class ParallelMLPEncoding:
 		X_var = Variable(torch.from_numpy(X).float())
 		return [net(X_var) for net in self.sequentials]
 
-	def _mse(self, X, Y):
+	def _loss(self, X, Y):
 		Y_pred = self._forward(X)
 		Y_var = [Variable(torch.from_numpy(Y[:, target][:, np.newaxis]).float()) for target in range(self.p)]
 		return [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.p)]
 
-	def calculate_mse(self, X, Y):
-		mse = self._mse(X, Y)
-		return np.array([num.data[0] for num in mse])
+	def calculate_loss(self, X, Y):
+		loss = self._loss(X, Y)
+		return np.array([num.data[0] for num in loss])
 
 	def get_weights(self):
 		return [list(net.parameters())[0].data.numpy() for net in self.sequentials]
@@ -148,6 +149,7 @@ class ParallelMLPDecoding:
 			self.out_nets.append(net)
 
 		# Set up optimizer
+		self.task = 'regression'
 		self.loss_fn = nn.MSELoss()
 		self.lr = lr
 		self.lam = lam
@@ -174,22 +176,22 @@ class ParallelMLPDecoding:
 			self.train = self._train_builtin
 
 	def _train_prox(self, X, Y):
-		mse = self._mse(X, Y)
-		total_mse = sum(mse)
+		loss = self._loss(X, Y)
+		total_loss = sum(loss)
 
 		# Take gradient step
 		[net.zero_grad() for net in chain(self.series_nets, self.out_nets)]
 
-		total_mse.backward()
+		total_loss.backward()
 		self.optimizer.step()
 
 		# Apply prox operator
 		[prox_operator(list(net.parameters())[0], self.penalty, self.n, self.lr, self.lam, lag = self.series_out_size) for net in self.out_nets]
 
 	def _train_builtin(self, X, Y):
-		mse = self._mse(X, Y)
+		loss = self._loss(X, Y)
 		penalty = [apply_penalty(list(net.parameters())[0], self.penalty, self.n, lag = self.series_out_size) for net in self.out_nets]
-		total_loss = sum(mse) + self.lam * sum(penalty)
+		total_loss = sum(loss) + self.lam * sum(penalty)
 
 		# Run optimizer
 		[net.zero_grad() for net in chain(self.series_nets, self.out_nets)]
@@ -203,14 +205,14 @@ class ParallelMLPDecoding:
 		series_layer = torch.cat(series_out, dim = 1)
 		return [net(series_layer) for net in self.out_nets]
 
-	def _mse(self, X, Y):
+	def _loss(self, X, Y):
 		Y_pred = self._forward(X)
 		Y_var = [Variable(torch.from_numpy(Y[:, target][:, np.newaxis]).float()) for target in range(self.p)]
 		return [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.p)]
 
-	def calculate_mse(self, X, Y):
-		mse = self._mse(X, Y)
-		return [num.data[0] for num in mse]
+	def calculate_loss(self, X, Y):
+		loss = self._loss(X, Y)
+		return [num.data[0] for num in loss]
 
 	def get_weights(self):
 		return [list(net.parameters())[0].data.numpy() for net in self.out_nets]

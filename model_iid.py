@@ -5,8 +5,8 @@ from torch.autograd import Variable
 
 import numpy as np
 
-class RegressionEncoding:
-	def __init__(self, input_size, output_size, hidden_units, lr, opt, lam, penalty_groups, nonlinearity = 'relu'):
+class IIDEncoding:
+	def __init__(self, input_size, output_size, hidden_units, lr, opt, lam, penalty_groups, nonlinearity = 'relu', task = 'regression'):
 		# Set up network
 		net = torch.nn.Sequential()
 		layers = list(zip([input_size] + hidden_units[1:], hidden_units))
@@ -24,7 +24,13 @@ class RegressionEncoding:
 		self.net = net
 
 		# Set up optimizer
-		self.loss_fn = nn.MSELoss()
+		self.task = task
+		if task == 'regression':
+			self.loss_fn = nn.MSELoss()
+		elif task == 'classification':
+			self.loss_fn = nn.CrossEntropyLoss()
+		else:
+			raise ValueError('task must be regression or classification')
 		self.lr = lr
 		self.lam = lam
 		self.penalty_groups = penalty_groups
@@ -46,7 +52,7 @@ class RegressionEncoding:
 			self.train = self._train_builtin
 
 	def _train_builtin(self, X, Y):
-		mse = self._mse(X, Y)
+		loss = self._loss(X, Y)
 
 		# Add regularization penalties
 		W = list(self.net.parameters())[0]
@@ -55,7 +61,7 @@ class RegressionEncoding:
 			penalty_list.append(torch.norm(W[:, start:end], p = 2))
 
 		# Compute total loss
-		total_loss = mse + self.lam * sum(penalty_list)
+		total_loss = loss + self.lam * sum(penalty_list)
 
 		# Run optimizer
 		self.net.zero_grad()
@@ -64,11 +70,11 @@ class RegressionEncoding:
 		self.optimizer.step()
 
 	def _train_prox(self, X, Y):
-		mse = self._mse(X, Y)
+		loss = self._loss(X, Y)
 
 		# Run optimizer
 		self.net.zero_grad()
-		mse.backward()
+		loss.backward()
 		self.optimizer.step()
 
 		# Apply prox operator
@@ -82,15 +88,26 @@ class RegressionEncoding:
 				C[:, start:end] = 0.0
 		W.data = torch.from_numpy(C)
 
-	def calculate_mse(self, X, Y):
-		return self._mse(X, Y).data.numpy()[0]
+	def calculate_loss(self, X, Y):
+		return self._loss(X, Y).data.numpy()[0]
+
+	def calculate_accuracy(self, X, Y):
+		if self.task != 'classification':
+			raise Exception('cannot calculate accuracy for regression task')
+		Y_var = Variable(torch.from_numpy(Y).long())
+		Y_pred = self._forward(X)
+		maxes, inds = torch.max(Y_pred, dim = 1)
+		return torch.sum(Y_var == inds).data[0] / float(len(inds))
 
 	def _forward(self, X):
 		X_var = Variable(torch.from_numpy(X).float())
 		return self.net(X_var)
 
-	def _mse(self, X, Y):
-		Y_var = Variable(torch.from_numpy(Y).float())
+	def _loss(self, X, Y):
+		if self.task == 'regression':
+			Y_var = Variable(torch.from_numpy(Y).float())
+		else:
+			Y_var = Variable(torch.from_numpy(Y).long())
 		Y_pred = self._forward(X)
 		return self.loss_fn(Y_pred, Y_var)
 

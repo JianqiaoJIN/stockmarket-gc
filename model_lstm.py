@@ -21,6 +21,7 @@ class ParallelLSTMEncoding:
 		self.hidden_layers = hidden_layers
 
 		# Set up optimizer
+		self.task = 'regression'
 		self.loss_fn = nn.MSELoss()
 		self.lam = lam
 		self.lr = lr
@@ -45,40 +46,91 @@ class ParallelLSTMEncoding:
 			self.train = self._train_builtin
 
 	def _init_hidden(self):
-		return [
+		return tuple(
 			(Variable(torch.zeros(self.hidden_layers, 1, self.hidden_size)), 
 				Variable(torch.zeros(self.hidden_layers, 1, self.hidden_size)))
 			for _ in self.lstms
-		]
+		)
 
-	def _forward(self, X):
+	def _forward(self, X, hidden = None, return_hidden = False):
 		n, p = X.shape
 		X_var = Variable(torch.from_numpy(X).float())
-		hidden = self._init_hidden()
-		return [self.out_layers[target](self.lstms[target](X_var.view(n, 1, p), hidden[target])[0].view(n, self.hidden_size)) for target in range(self.output_series)]
+		if hidden is None:
+			hidden = self._init_hidden()
+		
+		lstm_return = [self.lstms[target](X_var.view(n, 1, p), hidden[target]) for target in range(self.output_series)]
+		lstm_return = list(zip(*lstm_return))
+		lstm_out, lstm_hidden = lstm_return
+		# lstm_out = lstm_return[0]
+		# lstm_hidden = lstm_return[1]
+		net_out = [self.out_layers[target](lstm_out[target].view(n, self.hidden_size)) for target in range(self.output_series)]
+		
+		if return_hidden:
+			return net_out, lstm_hidden
+		else:
+			return net_out
+		# return [self.out_layers[target](self.lstms[target](X_var.view(n, 1, p), hidden[target])[0].view(n, self.hidden_size)) for target in range(self.output_series)]
 
-	def _mse(self, X, Y):
-		Y_pred = self._forward(X)
+	def _loss(self, X, Y, hidden = None, return_hidden = False):
+		Y_pred, hidden = self._forward(X, hidden = hidden, return_hidden = True)
 		Y_var = [Variable(torch.from_numpy(Y[:, target][:, np.newaxis]).float()) for target in range(self.output_series)]
-		return [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.output_series)]
+		loss = [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.output_series)]
+		
+		if return_hidden:
+			return loss, hidden
+		else:
+			return loss
 
-	def _train_prox(self, X, Y):
-		mse = self._mse(X, Y)
-		total_mse = sum(mse)
+	def _train_prox(self, X, Y, truncation = None):
+		if truncation is None:
+			self._train_prox_helper(X, Y)
+
+		else:
+			self._truncated_training(X, Y, truncation, self._train_prox_helper)
+
+	def _train_builtin(self, X, Y, truncation = None):
+		if truncation is None:
+			self._train_builtin_helper(X, Y)
+
+		else:
+			self._truncated_training(X, Y, truncation, self._train_builtin_helper)
+
+	def _truncated_training(self, X, Y, truncation, training_func):
+		T = X.shape[0]
+		num = int(np.ceil(T / truncation))
+		hidden = self._init_hidden()
+		for i in range(num - 1):
+			X_subset = X[range(i * truncation, (i + 1) * truncation), :]
+			Y_subset = Y[range(i * truncation, (i + 1) * truncation), :]
+			hidden = training_func(X_subset, Y_subset, hidden = hidden, return_hidden = True)
+
+			# Repackage hidden
+			hidden = repackage_hidden(hidden)
+
+		X_subset = X[((num - 1) * truncation):, :]
+		Y_subset = Y[((num - 1) * truncation):, :]
+		training_func(X_subset, Y_subset, hidden = hidden)
+
+	def _train_prox_helper(self, X, Y, hidden = None, return_hidden = False):
+		loss, hidden = self._loss(X, Y, hidden = hidden, return_hidden = True)
+		total_loss = sum(loss)
 
 		# Take gradient step
 		[net.zero_grad() for net in chain(self.lstms, self.out_layers)]
 
-		total_mse.backward()
+		total_loss.backward()
 		self.optimizer.step()
 
 		# Apply proximal operator
 		[prox_operator(lstm.weight_ih_l0, 'group_lasso', self.input_series, self.lr, self.lam) for lstm in self.lstms]
 
-	def _train_builtin(self, X, Y):
-		mse = self._mse(X, Y)
+		if return_hidden:
+			return hidden
+
+	def _train_builtin_helper(self, X, Y, hidden = None, return_hidden = False):
+		loss, hidden = self._loss(X, Y, hidden = hidden, return_hidden = True)
 		penalty = [apply_penalty(lstm.weight_ih_l0, 'group_lasso', self.input_series) for lstm in self.lstms]
-		total_loss = sum(mse) + self.lam * sum(penalty)
+		total_loss = sum(loss) + self.lam * sum(penalty)
 
 		# Run optimizer
 		[net.zero_grad() for net in chain(self.lstms, self.out_layers)]
@@ -86,9 +138,12 @@ class ParallelLSTMEncoding:
 		total_loss.backward()
 		self.optimizer.step()
 
-	def calculate_mse(self, X, Y):
-		mse = self._mse(X, Y)
-		return [num.data[0] for num in mse]
+		if return_hidden:
+			return hidden
+
+	def calculate_loss(self, X, Y):
+		loss = self._loss(X, Y)
+		return [num.data[0] for num in loss]
 
 	def predict(self, X):
 		Y_pred = self._forward(X)
@@ -123,6 +178,7 @@ class ParallelLSTMDecoding:
 		self.hidden_layers = hidden_layers
 
 		# Set up optimizer
+		self.task = 'regression'
 		self.loss_fn = nn.MSELoss()
 		self.lam = lam
 		self.lr = lr
@@ -147,42 +203,88 @@ class ParallelLSTMDecoding:
 			self.train = self._train_builtin
 
 	def _init_hidden(self):
-		return [
+		return tuple(
 			(Variable(torch.zeros(self.hidden_layers, 1, self.hidden_size)), 
 				Variable(torch.zeros(self.hidden_layers, 1, self.hidden_size)))
 			for _ in self.lstms
-		]
+		)
 
-	def _forward(self, X):
+	def _forward(self, X, hidden = None, return_hidden = False):
 		n, p = X.shape
 		X_var = [Variable(torch.from_numpy(X[:, in_series][:, np.newaxis]).float()) for in_series in range(self.input_series)]
-		hidden = self._init_hidden()
-		lstm_out = [self.lstms[in_series](X_var[in_series].view(n, 1, 1), hidden[in_series]) for in_series in range(self.input_series)]
-		lstm_layer = torch.cat([out[0].view(n, self.hidden_size) for out in lstm_out], dim = 1)
-		return [net(lstm_layer) for net in self.out_networks]
+		if hidden is None:
+			hidden = self._init_hidden()
+		lstm_return = [self.lstms[in_series](X_var[in_series].view(n, 1, 1), hidden[in_series]) for in_series in range(self.input_series)]
+		lstm_return = list(zip(*lstm_return))
+		lstm_out, lstm_hidden = lstm_return
+		lstm_layer = torch.cat([out.view(n, self.hidden_size) for out in lstm_out], dim = 1)
+		net_out = [net(lstm_layer) for net in self.out_networks]
 
-	def _mse(self, X, Y):
-		Y_pred = self._forward(X)
+		if return_hidden:
+			return net_out, lstm_hidden
+		else:
+			return net_out
+
+	def _loss(self, X, Y, hidden = None, return_hidden = False):
+		Y_pred, hidden = self._forward(X, hidden = hidden, return_hidden = True)
 		Y_var = [Variable(torch.from_numpy(Y[:, target]).float()) for target in range(self.output_series)]
-		return [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.output_series)]
+		loss = [self.loss_fn(Y_pred[target], Y_var[target]) for target in range(self.output_series)]
 
-	def _train_prox(self, X, Y):
-		mse = self._mse(X, Y)
-		total_mse = sum(mse)
+		if return_hidden:
+			return loss, hidden
+		else:
+			return loss
+
+	def _train_prox(self, X, Y, truncation = None):
+		if truncation is None:
+			self._train_prox_helper(X, Y)
+
+		else:
+			self._truncated_training(X, Y, truncation, self._train_prox_helper)
+
+	def _train_builtin(self, X, Y, truncation = None):
+		if truncation is None:
+			self._train_builtin_helper(X, Y)
+
+		else:
+			self._truncated_training(X, Y, truncation, self._train_builtin_helper)
+
+	def _truncated_training(self, X, Y, truncation, training_func):
+		T = X.shape[0]
+		num = int(np.ceil(T / truncation))
+		hidden = self._init_hidden()
+		for i in range(num - 1):
+			X_subset = X[range(i * truncation, (i + 1) * truncation), :]
+			Y_subset = Y[range(i * truncation, (i + 1) * truncation), :]
+			hidden = training_func(X_subset, Y_subset, hidden = hidden, return_hidden = True)
+
+			# Repackage hidden
+			hidden = repackage_hidden(hidden)
+
+		X_subset = X[((num - 1) * truncation):, :]
+		Y_subset = Y[((num - 1) * truncation):, :]
+		training_func(X_subset, Y_subset, hidden = hidden)
+
+	def _train_prox_helper(self, X, Y, hidden = None, return_hidden = False):
+		loss, hidden = self._loss(X, Y, hidden = hidden, return_hidden = True)
+		total_loss = sum(loss)
 
 		# Take gradient step
 		[net.zero_grad() for net in chain(self.lstms, self.out_networks)]
 
-		total_mse.backward()
+		total_loss.backward()
 		self.optimizer.step()
 
 		# Apply proximal operator
 		[prox_operator(list(net.parameters())[0], 'group_lasso', self.input_series, self.lr, self.lam, lag = self.hidden_size) for net in self.out_networks]
 
-	def _train_builtin(self, X, Y):
-		mse = self._mse(X, Y)
+		if return_hidden:
+			return hidden
+
+	def _train_builtin_helper(self, X, Y, hidden = None, return_hidden = False):
+		loss, hidden = self._loss(X, Y, hidden = hidden, return_hidden = True)
 		penalty = [apply_penalty(list(net.parameters())[0], 'group_lasso', self.input_series, lag = self.hidden_size) for net in self.out_networks]
-		total_loss = sum(mse) + self.lam * sum(penalty)
+		total_loss = sum(loss) + self.lam * sum(penalty)
 
 		# Run optimizer
 		[net.zero_grad() for net in chain(self.lstms, self.out_networks)]
@@ -190,17 +292,26 @@ class ParallelLSTMDecoding:
 		total_loss.backward()
 		self.optimizer.step()
 
+		if return_hidden:
+			return hidden
+
 	def predict(self, X):
 		Y_pred = self._forward(X)
 		return np.array([Y[:, 0].data.numpy() for Y in Y_pred]).T
 
-	def calculate_mse(self, X, Y):
-		mse = self._mse(X, Y)
-		return [num.data[0] for num in mse]
+	def calculate_loss(self, X, Y):
+		loss = self._loss(X, Y)
+		return [num.data[0] for num in loss]
 
 	def get_weights(self):
 		return [list(net.parameters())[0].data.numpy() for net in self.out_networks]
 
+
+def repackage_hidden(hidden):
+	if type(hidden) == Variable:
+		return Variable(hidden.data)
+	else:
+		return tuple(repackage_hidden(h) for h in hidden)
 
 # class SingleLSTM:
 # 	def __init__(self, input_series, output_series, hidden_size, hidden_layers, lr, opt, lam, penalty):
