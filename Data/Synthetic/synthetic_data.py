@@ -69,25 +69,63 @@ def var_model(sparsity, p, sd_beta, sd_e, N, lag):
 
 	return X.T, beta, GC_on
 
+def long_lag_var_model(sparsity, p, sd_beta, sd_e, N, lag = 20):
+	radius = 0.97
+	min_effect = 1
+	GC_on = np.random.binomial(n = 1, p = sparsity, size = (p, p))
+	np.fill_diagonal(GC_on, 0.0)
+	GC_lag = np.zeros((p, p * lag))
+	GC_lag[:, range(0, p)] = np.eye(p)
+	GC_lag[:, range(p * (lag - 1), p * lag)] = GC_on
+
+	beta = np.random.normal(loc = 0, scale = sd_beta, size = (p, p * lag))
+	beta[(beta < min_effect) & (beta > 0)] = min_effect
+	beta[(beta > min_effect) & (beta < 0)] = - min_effect
+	beta = np.multiply(beta, GC_lag)
+
+	not_stationary = True
+	while not_stationary:
+		beta, not_stationary = stationary_var(beta, p, lag, radius)
+
+	errors = np.random.normal(loc = 0, scale = sd_e, size = (p, N))
+
+	X = np.zeros((p, N))
+	X[:, range(lag)] = errors[:, range(lag)]
+	for i in range(lag, N):
+		X[:, i] = np.dot(beta, X[:, range(i - lag, i)].flatten(order = 'F')) + errors[:, i]
+
+	return X.T, beta, np.maximum(GC_on, np.eye(p))
+
+
 if __name__ == '__main__':
 
 	X, GC = lorentz_96(5, 10, 1000)
-	with open('lorentz_data.data', 'wb') as f:
-		pickle.dump({'X': X, 'GC': GC}, f, pickle.HIGHEST_PROTOCOL)
+	# with open('lorentz_data.data', 'wb') as f:
+	# 	pickle.dump({'X': X, 'GC': GC}, f, pickle.HIGHEST_PROTOCOL)
 
 	Y = np.zeros((1001, 11))
 	Y[1:, 1:] = X
 	Y[1:, 0] = np.arange(1, 1001)
 	Y[0, :] = np.arange(1, 12)
-	np.savetxt('../lorentz.csv', Y, delimiter = ',')
+	# np.savetxt('../lorentz.csv', Y, delimiter = ',')
 
 	X, beta, GC = var_model(0.2, 10, 1.0, 1.0, 1000, 1)
-	with open('var_data.data', 'wb') as f:
+	# with open('var_data.data', 'wb') as f:
+	# 	pickle.dump({'X': X, 'GC': GC, 'beta': beta}, f, pickle.HIGHEST_PROTOCOL)
+
+	Y = np.zeros((1001, 11))
+	Y[1:, 1:] = X
+	Y[1:, 0] = np.arange(1, 1001)
+	Y[0, :] = np.arange(1, 12)
+	# np.savetxt('../var.csv', Y, delimiter = ',')
+
+	X, beta, GC = long_lag_var_model(0.2, 10, 1.0, 1.0, 1000, lag = 20)
+	with open('long_var_data.data', 'wb') as f:
 		pickle.dump({'X': X, 'GC': GC, 'beta': beta}, f, pickle.HIGHEST_PROTOCOL)
 
 	Y = np.zeros((1001, 11))
 	Y[1:, 1:] = X
 	Y[1:, 0] = np.arange(1, 1001)
 	Y[0, :] = np.arange(1, 12)
-	np.savetxt('../var.csv', Y, delimiter = ',')
+	np.savetxt('../long_var.csv', Y, delimiter = ',')
 
