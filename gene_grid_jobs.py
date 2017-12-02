@@ -59,3 +59,30 @@ with open(jobfile, 'a') as f:
 			argstr += ' --mbsize=%d' % mbsize
 
 		f.write(argstr + '\n')
+
+
+''' Jobs for unregularized experiment '''
+
+nepoch_grid = [5000]
+seed_grid = [987, 876, 765, 654, 543]
+lr_grid = [0.01, 0.005, 0.001, 0.0005, 0.0001]
+opt_grid = ['momentum']
+mbsize_grid = [None, 32]
+
+BASECMD = 'python gene_ridge_experiment.py'
+
+param_grid = product(nepoch_grid, seed_grid, lr_grid, opt_grid, mbsize_grid)
+
+with open(jobfile, 'w') as f:
+	for param in param_grid:
+		nepoch, seed, lr, opt, mbsize = param
+		argstr = BASECMD
+		argstr += ' --lam=%e' % 0.0
+		argstr += ' --nepoch=%d' % nepoch
+		argstr += ' --seed=%d' % seed
+		argstr += ' --lr=%e' % lr
+		argstr += ' --opt=%s' % opt
+		if mbsize is not None:
+			argstr += ' --mbsize=%d' % mbsize
+
+		f.write(argstr + '\n')
