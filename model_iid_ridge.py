@@ -63,7 +63,7 @@ class RidgeNetwork:
 		Y_var = Variable(torch.from_numpy(Y).long())
 		Y_pred = self._forward(X)
 		maxes, inds = torch.max(Y_pred, dim = 1)
-		return torch.sum(Y_var == inds).data[0] / float(len(inds))
+		return (Y_var == inds).float().sum().data[0] / float(len(inds))
 
 	def train(self, X, Y):
 		loss = self._loss(X, Y)

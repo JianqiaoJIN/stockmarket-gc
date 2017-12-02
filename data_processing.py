@@ -61,5 +61,5 @@ def whiten_data_cholesky(X):
 
 def normalize(X):
 	X_centered = X - np.mean(X, axis = 0)
-	sigma = np.sqrt(np.var(X))
+	sigma = np.sqrt(np.var(X, axis = 0))
 	return np.divide(X_centered, sigma)
