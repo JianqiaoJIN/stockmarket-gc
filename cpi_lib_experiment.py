@@ -173,25 +173,25 @@ for i, lam in enumerate(lam_list):
 
 	# Plot loss 1
 	ax = axarr[1, i]
-	ax.plot(np.arange(0, 5000, 50), np.array(train_loss1).T, color = 'orange', alpha = 0.3)
-	ax.plot(np.arange(0, 5000, 50), np.array(val_loss1).T, color = 'blue', alpha = 0.3)
-	ax.legend([('orange', '--'), ('blue', '--')], ['Train', 'Validation'], handler_map={tuple: AnyObjectHandler()}, loc = 'upper right', fontsize = 8)
+	ax.plot(np.arange(0, 5000, 50), np.array(train_loss1).T, color = 'blue', alpha = 0.3)
+	ax.plot(np.arange(0, 5000, 50), np.array(val_loss1).T, color = 'orange', alpha = 0.3)
+	ax.legend([('blue', '--'), ('orange', '--')], ['Train', 'Validation'], handler_map={tuple: AnyObjectHandler()}, loc = 'upper right', fontsize = 8)
 	ax.set_xlabel('Epoch', fontsize = 10)
 
 	# Plot loss 2
 	ax = axarr[2, i]
-	ax.plot(np.arange(0, 5000, 50), np.array(train_loss2).T, color = 'orange', alpha = 0.3)
-	ax.plot(np.arange(0, 5000, 50), np.array(val_loss2).T, color = 'blue', alpha = 0.3)
-	ax.legend([('orange', '--'), ('blue', '--')], ['Train', 'Validation'], handler_map={tuple: AnyObjectHandler()}, loc = 'upper right', fontsize = 8)
+	ax.plot(np.arange(0, 5000, 50), np.array(train_loss2).T, color = 'blue', alpha = 0.3)
+	ax.plot(np.arange(0, 5000, 50), np.array(val_loss2).T, color = 'orange', alpha = 0.3)
+	ax.legend([('blue', '--'), ('orange', '--')], ['Train', 'Validation'], handler_map={tuple: AnyObjectHandler()}, loc = 'upper right', fontsize = 8)
 	ax.set_xlabel('Epoch', fontsize = 10)
 
 for i, lam in enumerate(lam_list):
 	ax = axarr[0, i]
-	ax.set_title(r'$\lambda = %.2f$' % lam, fontsize = 10)
+	ax.set_title(r'$\lambda = %.2f$' % lam, fontsize = 14)
 
 for i, label in enumerate(['GC Metric', 'CPI MSE', 'Libor MSE']):
 	ax = axarr[i, 0]
-	ax.set_ylabel(label, fontsize = 10)
+	ax.set_ylabel(label, fontsize = 14)
 
 plt.tight_layout()
 plt.subplots_adjust(hspace = 0.4, bottom = 0.07)

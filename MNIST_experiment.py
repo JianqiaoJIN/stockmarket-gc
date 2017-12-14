@@ -132,7 +132,7 @@ for i, (lam, result) in enumerate(list(zip(lam_list[:-1], results[:-1]))):
 	ax.legend(loc = 'center right', fontsize = 10)
 	ax.set_xlabel('Epoch')
 
-for i, label in enumerate(['GC Metric', 'Accuracy']):
+for i, label in enumerate(['Group norm', 'Accuracy']):
 	ax = axarr[i, 0]
 	ax.set_ylabel(label)
 

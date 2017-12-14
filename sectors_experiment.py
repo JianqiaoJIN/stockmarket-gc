@@ -15,22 +15,21 @@ from model_mlp import *
 # Parse command line arguments
 lag = 5
 mbsize = None
-lam_list = [0.5, 0.25, 0.1, 0.05, 0.025, 0.01, 0.005, 0.0025, 0.001]
-lam_list = [0.06, 0.055, 0.05, 0.045, 0.04, 0.035, 0.03]
+lam_list = [0.5, 0.1, 0.05, 0.01, 0.005, 0.0001]
 penalty_type = 'group_lasso'
 opt_type = 'prox'
 seed = 12345
 nepoch = 10000
 arch = 2
 lr = 0.001
-filename = 'Data/sectors_monthly_returns.csv'
+filename = 'Data/sectors_monthly.csv'
 
 # Prepare data
-data = pd.read_csv(filename, dtype = float, header = 0, sep = ',')
-data_values = data.values[:, 1:]
-data_values = whiten_data_cholesky(data_values)
+data = pd.read_csv(filename, header = 0, sep = ',')
+data_values = data.values[:, 1:].astype(float)
+whitened_values = whiten_data_cholesky(data_values)
 
-X_train, Y_train, X_val, Y_val = format_ts_data(data_values, lag = lag, validation = 0.1)
+X_train, Y_train, X_val, Y_val = format_ts_data(whitened_values, lag = lag, validation = 0.1)
 
 T, p_out = Y_train.shape
 p_in = int(X_train.shape[1] / lag)
@@ -63,7 +62,7 @@ for lam in lam_list:
 	model = ParallelMLPEncoding(p_in, p_out, lag, hidden_units, lr, opt_type, lam, penalty_type)
 	
 	# Run experiment
-	train_loss, val_loss, weights_list = run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = mbsize)
+	train_loss, val_loss, weights_list, forecasts_train, forecasts_val = run_experiment(model, X_train, Y_train, X_val, Y_val, nepoch, mbsize = mbsize, predictions = True)
 	
 	# Create GC estimate grid
 	GC_est = np.zeros((p_out, p_in))

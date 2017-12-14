@@ -78,7 +78,7 @@ np.random.seed(seed)
 for lam in lam_list:
 
 	# Get model
-	model = RegressionEncoding(p_in, p_out, hidden_units, lr, opt, lam, penalty_groups)
+	model = IIDEncoding(p_in, p_out, hidden_units, lr, opt, lam, penalty_groups)
 
 	# Run experiment
 	train_loss, val_loss, weights = run_experiment(model, X_train, Y_train, X_val, Y_val, 

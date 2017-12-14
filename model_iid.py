@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 
+from regularize import *
+
 import numpy as np
 
 class IIDEncoding:
@@ -34,6 +36,7 @@ class IIDEncoding:
 		self.lr = lr
 		self.lam = lam
 		self.penalty_groups = penalty_groups
+		self.input_size = input_size
 
 		if opt == 'prox':
 			self.optimizer = optim.SGD(net.parameters(), lr = lr, momentum = 0.9)
@@ -56,12 +59,16 @@ class IIDEncoding:
 
 		# Add regularization penalties
 		W = list(self.net.parameters())[0]
-		penalty_list = []
-		for start, end in zip(self.penalty_groups[:-1], self.penalty_groups[1:]):
-			penalty_list.append(torch.norm(W[:, start:end], p = 2))
+		if self.penalty_groups == -1:
+			penalty = apply_penalty(W, 'group_lasso', self.input_size)
+		else:
+			penalty_list = []
+			for start, end in zip(self.penalty_groups[:-1], self.penalty_groups[1:]):
+				penalty_list.append(torch.norm(W[:, start:end], p = 2))
+			penalty = sum(penalty_list)
 
 		# Compute total loss
-		total_loss = loss + self.lam * sum(penalty_list)
+		total_loss = loss + self.lam * penalty
 
 		# Run optimizer
 		self.net.zero_grad()
@@ -79,14 +86,17 @@ class IIDEncoding:
 
 		# Apply prox operator
 		W = list(self.net.parameters())[0]
-		C = W.data.clone().numpy()
-		for start, end in zip(self.penalty_groups[:-1], self.penalty_groups[1:]):
-			norm = np.linalg.norm(C[:, start:end], ord = 2)
-			if norm >= self.lr * self.lam:
-				C[:, start:end] = C[:, start:end] * (1 - self.lr * self.lam / norm)
-			else: 
-				C[:, start:end] = 0.0
-		W.data = torch.from_numpy(C)
+		if self.penalty_groups == -1:
+			prox_operator(W, 'group_lasso', self.input_size, self.lr, self.lam)
+		else:
+			C = W.data.clone().numpy()
+			for start, end in zip(self.penalty_groups[:-1], self.penalty_groups[1:]):
+				norm = np.linalg.norm(C[:, start:end], ord = 2)
+				if norm >= self.lr * self.lam:
+					C[:, start:end] = C[:, start:end] * (1 - self.lr * self.lam / norm)
+				else: 
+					C[:, start:end] = 0.0
+			W.data = torch.from_numpy(C)
 
 	def calculate_loss(self, X, Y):
 		return self._loss(X, Y).data.numpy()[0]

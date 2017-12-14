@@ -61,15 +61,12 @@ class ParallelLSTMEncoding:
 		lstm_return = [self.lstms[target](X_var.view(n, 1, p), hidden[target]) for target in range(self.output_series)]
 		lstm_return = list(zip(*lstm_return))
 		lstm_out, lstm_hidden = lstm_return
-		# lstm_out = lstm_return[0]
-		# lstm_hidden = lstm_return[1]
 		net_out = [self.out_layers[target](lstm_out[target].view(n, self.hidden_size)) for target in range(self.output_series)]
 		
 		if return_hidden:
 			return net_out, lstm_hidden
 		else:
 			return net_out
-		# return [self.out_layers[target](self.lstms[target](X_var.view(n, 1, p), hidden[target])[0].view(n, self.hidden_size)) for target in range(self.output_series)]
 
 	def _loss(self, X, Y, hidden = None, return_hidden = False):
 		Y_pred, hidden = self._forward(X, hidden = hidden, return_hidden = True)
