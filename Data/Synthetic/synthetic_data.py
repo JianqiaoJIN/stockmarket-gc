@@ -129,3 +129,13 @@ if __name__ == '__main__':
 	Y[0, :] = np.arange(1, 12)
 	np.savetxt('../long_var.csv', Y, delimiter = ',')
 
+	X, beta, GC = long_lag_var_model(0.2, 10, 1.0, 1.0, 1000, lag = 3)
+	with open('medium_var_data.data', 'wb') as f:
+		pickle.dump({'X': X, 'GC': GC, 'beta': beta}, f, pickle.HIGHEST_PROTOCOL)
+
+	Y = np.zeros((1001, 11))
+	Y[1:, 1:] = X
+	Y[1:, 0] = np.arange(1, 1001)
+	Y[0, :] = np.arange(1, 12)
+	np.savetxt('../medium_var.csv', Y, delimiter = ',')	
+
