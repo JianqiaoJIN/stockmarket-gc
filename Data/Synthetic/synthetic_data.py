@@ -5,6 +5,7 @@
 from __future__ import division
 import numpy as np
 import pickle
+from scipy.special import logsumexp
 
 def lorentz_96(forcing_constant, p, N, delta_t = 0.01, sd = 0.1, noise_add = 'global'):
 	burnin = 4000
@@ -96,6 +97,48 @@ def long_lag_var_model(sparsity, p, sd_beta, sd_e, N, lag = 20):
 
 	return X.T, beta, np.maximum(GC_on, np.eye(p))
 
+"""function generates multivariate time series data from a 
+sparse HMM model where there is sparsity in the HMM transition function
+inputs:
+p - dimensional of the time series
+N - length of time series
+num_states - #of states of the HMM
+sd_e - standard deviation of the error distribution for HMM
+sparsity - sparsity proportion
+tau - temperature parameter
+you might need to mess with the sd_e parameter, as a bigger value will 
+make dependence on the past more important for inference of the future.
+"""
+def generate_data_hmm(p, N, num_states = 3, sd_e = 0.1, sparsity = 0.2, tau = 2):
+	Z_sig = 0.3
+	Z = np.zeros((p, p, num_states, num_states))
+	GC_on = np.random.binomial(1, sparsity, p * p).reshape(p,p)
+	for i in range(p):
+		GC_on[i,i] = 1
+	mu = np.random.uniform(low = -5.0, high = 5.0, size = (p, num_states))
+	for i in range(p):
+		for j in range(p):
+			if GC_on[i,j]:
+				Z[i,j,:,:] = Z_sig * np.random.randn(num_states,num_states)
+
+    # generate state sequence
+	L = np.zeros((N,p)).astype(int)
+	for t in range(1,N):
+		for i in range(p):
+			switch_prob = np.zeros(num_states)
+			for j in range(p):
+				switch_prob += Z[i,j,L[t-1,j],:]
+			switch_prob = switch_prob * tau
+			switch_prob = np.exp(switch_prob - logsumexp(switch_prob))
+			L[t,i] = np.nonzero(np.random.multinomial(1, switch_prob))[0][0]
+
+    # generate outputs from state sequence
+	X = np.zeros((N,p))
+	for i in range(N):
+		for j in range(p):
+			X[i,j] = sd_e * np.random.randn(1) + mu[j,L[i,j]]
+
+	return X, L, GC_on
 
 if __name__ == '__main__':
 
@@ -139,3 +182,12 @@ if __name__ == '__main__':
 	Y[0, :] = np.arange(1, 12)
 	np.savetxt('../medium_var.csv', Y, delimiter = ',')	
 
+	X, L, GC = generate_data_hmm(10, 1000, num_states = 3, sd_e = 0.1, sparsity = 0.2, tau = 2)
+	with open('hmm_data.data', 'wb') as f:
+		pickle.dump({'X': X, 'GC': GC, 'L': L}, f, pickle.HIGHEST_PROTOCOL)
+
+	Y = np.zeros((1001, 11))
+	Y[1:, 1:] = X
+	Y[1:, 0] = np.arange(1, 1001)
+	Y[0, :] = np.arange(1, 12)
+	np.savetxt('../hmm.csv', Y, delimiter = ',')
